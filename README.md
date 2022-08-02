@@ -437,7 +437,7 @@ Output
 }
 ```
 
-The generated output.json
+The generated `output.json` file
 
 ```json
 {
@@ -445,3 +445,209 @@ The generated output.json
   "statusCode": 200
 }
 ```
+
+#### install devDependencies
+
+```
+npm i -D serverless-webpack webpack webpack-cli ts-loader webpack-node-externals serverless-plugin-warmup serverless-prune-plugin remove-files-webpack-plugin
+```
+
+The `webpack.config.js` file
+
+```js
+const path = require("path");
+const webpack = require("webpack");
+const slsw = require("serverless-webpack");
+const RemovePlugin = require("remove-files-webpack-plugin");
+const nodeExternals = require("webpack-node-externals");
+
+module.exports = (async () => {
+  const config = {
+    mode: slsw.lib.webpack.isLocal ? "development" : "production",
+    externals: slsw.lib.webpack.isLocal ? [nodeExternals()] : ["aws-sdk"],
+    entry: ["src/main.ts"],
+    optimization: {
+      minimize: false,
+    },
+    ignoreWarnings: [
+      {
+        module: /^(?!CriticalDependenciesWarning$)/, // A RegExp
+      },
+      (warning) => true,
+    ],
+    stats: {
+      modules: false,
+      errorDetails: true,
+    },
+    output: {
+      libraryTarget: "commonjs",
+      path: path.join(__dirname, "dist"),
+      filename: "main.js",
+    },
+    target: "node",
+    module: {
+      rules: [{ test: /\.ts(x)?$/, loader: "ts-loader" }],
+    },
+    devtool: "source-map",
+    resolve: {
+      extensions: [".ts", ".js"],
+      alias: {
+        src: path.resolve(__dirname, "src"),
+      },
+      symlinks: false,
+      cacheWithContext: false,
+    },
+    plugins: [
+      new webpack.IgnorePlugin({ resourceRegExp: /^pg-native|vertx$/ }),
+    ],
+  };
+  return config;
+})();
+```
+
+and add a npm script `"build": "webpack build"`
+
+This script will build the ts file into the `dist/main.js` file, which can be used by serverless.ts
+
+```ts
+import type { AWS } from "@serverless/typescript";
+
+const service: AWS["service"] = "localstack-demo";
+
+const serverlessConfiguration: AWS = {
+  service,
+  frameworkVersion: "*",
+  plugins: ["serverless-localstack", "serverless-prune-plugin"],
+  provider: {
+    name: "aws",
+    runtime: "nodejs12.x",
+    logRetentionInDays: 60,
+    stage: "local",
+    tags: {
+      owner: "jgu@xxx.com.au",
+      "account-name": "test-${env:NODE_ENV}",
+      creator: "jgu@xxx.com.au",
+      "project-name": "test deployment",
+      "program-name": "bsd",
+      "project-code": "102",
+    },
+  },
+  useDotenv: true,
+  custom: {
+    prune: {
+      automatic: true,
+      number: 5,
+    },
+    localstack: {
+      debugger: true,
+      stages: ["${env:NODE_ENV}"],
+      endpointFile: "localstack_endpoints.json",
+      lambda: {
+        mountCode: true,
+      },
+    },
+  },
+  configValidationMode: "error",
+  functions: {
+    api: {
+      handler: "dist/main.handler",
+      architecture: "arm64",
+      memorySize: 512,
+      maximumRetryAttempts: 0,
+      timeout: 900,
+      environment: {
+        API_VERSION: "${env:CURRENT_API_VERSION}",
+        STAGE: "${env:NODE_ENV}",
+        NODE_OPTIONS: "--no-deprecation",
+      },
+    },
+  },
+};
+
+module.exports = serverlessConfiguration;
+```
+
+Serverless typescript will deploy the build JavaScript file `main.js` to lambda function
+
+If you check with aws cli, note the Handler path is correct.
+
+```
+"FunctionName": "localstack-demo-local-api",
+"FunctionArn": "arn:aws:lambda:us-east-1:000000000000:function:localstack-demo-local-api",
+"Runtime": "nodejs12.x",
+"Role": "arn:aws:iam::000000000000:role/localstack-demo-local-us-east-1-lambdaRole",
+"Handler": "dist/main.handler",
+"Description": "",
+"Timeout": 900,
+"MemorySize": 512,
+"LastModified": "2022-08-02T04:05:40.285+0000",
+```
+
+If you try to deploy with webpack-serverless,
+
+```ts
+import type { AWS } from "@serverless/typescript";
+
+const service: AWS["service"] = "localstack-demo";
+
+const serverlessConfiguration: AWS = {
+  service,
+  frameworkVersion: "*",
+  plugins: [
+    "serverless-localstack",
+    "serverless-webpack",
+    "serverless-prune-plugin",
+  ],
+  provider: {
+    name: "aws",
+    runtime: "nodejs12.x",
+    logRetentionInDays: 60,
+    stage: "local",
+    tags: {
+      owner: "jgu@xxx.com.au",
+      "account-name": "test-${env:NODE_ENV}",
+      creator: "jgu@xxx.com.au",
+      "project-name": "test deployment",
+      "program-name": "bsd",
+      "project-code": "102",
+    },
+  },
+  useDotenv: true,
+  custom: {
+    webpack: {
+      webpackConfig: "./webpack.config.js",
+    },
+    prune: {
+      automatic: true,
+      number: 5,
+    },
+    localstack: {
+      debugger: true,
+      stages: ["${env:NODE_ENV}"],
+      endpointFile: "localstack_endpoints.json",
+      lambda: {
+        mountCode: true,
+      },
+    },
+  },
+  configValidationMode: "error",
+  functions: {
+    api: {
+      handler: "dist/main.handler",
+      architecture: "arm64",
+      memorySize: 512,
+      maximumRetryAttempts: 0,
+      timeout: 900,
+      environment: {
+        API_VERSION: "${env:CURRENT_API_VERSION}",
+        STAGE: "${env:NODE_ENV}",
+        NODE_OPTIONS: "--no-deprecation",
+      },
+    },
+  },
+};
+
+module.exports = serverlessConfiguration;
+```
+
+the handler path will be wrong `"Handler": ".webpack/service/dist/main.handler",`

@@ -5,7 +5,7 @@ const service: AWS["service"] = "localstack-demo";
 const serverlessConfiguration: AWS = {
   service,
   frameworkVersion: "*",
-  plugins: ["serverless-localstack"],
+  plugins: ["serverless-localstack", "serverless-prune-plugin"],
   provider: {
     name: "aws",
     runtime: "nodejs12.x",
@@ -22,6 +22,10 @@ const serverlessConfiguration: AWS = {
   },
   useDotenv: true,
   custom: {
+    prune: {
+      automatic: true,
+      number: 5,
+    },
     localstack: {
       debugger: true,
       stages: ["${env:NODE_ENV}"],
@@ -34,7 +38,7 @@ const serverlessConfiguration: AWS = {
   configValidationMode: "error",
   functions: {
     api: {
-      handler: "src/index.hello",
+      handler: "dist/main.handler",
       architecture: "arm64",
       memorySize: 512,
       maximumRetryAttempts: 0,
