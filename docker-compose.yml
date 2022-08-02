@@ -1,25 +1,31 @@
-# docker-compose.yml
-version: "3.8"
+version: "3.7"
 services:
-  aws:
+  localstack:
+    container_name: "${LOCALSTACK_DOCKER_NAME-localstack}"
     image: localstack/localstack
-    environment:
-      # Out put error messaging for local development
-      DEBUG: 1
-      # (optional) Docker network that lambdas are reachable by.
-      # This makes it easier for Lambads to be invoked by other
-      # external Docker containers.
-      LAMBDA_DOCKER_NETWORK: my-local-aws-network
-      # Use our local files via Docker volumes to define our Lambdas
-      LAMBDA_REMOTE_DOCKER: 0
-      # Spin up the Lambda module
-      SERVICES: lambda,s3,cloudformation,sts
+    hostname: localstack
+    networks:
+      - localstack-net
     ports:
-      - 4566:4566
+      - "4566-4599:4566-4599"
+      - "${PORT_WEB_UI-8080}:${PORT_WEB_UI-8080}"
+    environment:
+      - SERVICES=s3,sqs,lambda,cloudformation,sts,iam,cloudwatch,apigateway,events
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - PORT_WEB_UI=8080
+      - LAMBDA_EXECUTOR=docker-reuse
+      - LAMBDA_REMOTE_DOCKER=false
+      - LAMBDA_REMOVE_CONTAINERS=true
+      - KINESIS_ERROR_PROBABILITY=${KINESIS_ERROR_PROBABILITY- }
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_TMP_FOLDER=${TMPDIR}
     volumes:
-      # Let LocalStack create new docker containers by giving
-      # LocalStack access to your computer's Docker daemon
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/tmp/localstack
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - ./bin:/docker-entrypoint-initaws.d
 networks:
-  default:
-    name: my-local-aws-network
+  localstack-net:
+    external: false
+    driver: bridge
+    name: localstack-net

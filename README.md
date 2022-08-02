@@ -276,3 +276,172 @@ config.stage: dev
     "body": "{\n  \"message\": \"Works!\",\n  \"input\": \"\"\n}"
 }
 ```
+
+#### Upgrade to `@serverless/typescript`. Replace `serverless.yml` with `serverless.ts`
+
+updated docker-compose file
+
+```yml
+version: "3.7"
+services:
+  localstack:
+    container_name: "${LOCALSTACK_DOCKER_NAME-localstack}"
+    image: localstack/localstack
+    hostname: localstack
+    networks:
+      - localstack-net
+    ports:
+      - "4566-4599:4566-4599"
+      - "${PORT_WEB_UI-8080}:${PORT_WEB_UI-8080}"
+    environment:
+      - SERVICES=s3,sqs,lambda,cloudformation,sts,iam,cloudwatch,apigateway,events
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - PORT_WEB_UI=8080
+      - LAMBDA_EXECUTOR=docker-reuse
+      - LAMBDA_REMOTE_DOCKER=false
+      - LAMBDA_REMOVE_CONTAINERS=true
+      - KINESIS_ERROR_PROBABILITY=${KINESIS_ERROR_PROBABILITY- }
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_TMP_FOLDER=${TMPDIR}
+    volumes:
+      - ./data:/tmp/localstack
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - ./bin:/docker-entrypoint-initaws.d
+networks:
+  localstack-net:
+    external: false
+    driver: bridge
+    name: localstack-net
+```
+
+replace `serverless.yml` with `serverless.ts`
+
+```ts
+import type { AWS } from "@serverless/typescript";
+
+const service: AWS["service"] = "localstack-demo";
+
+const serverlessConfiguration: AWS = {
+  service,
+  frameworkVersion: "*",
+  plugins: ["serverless-localstack"],
+  provider: {
+    name: "aws",
+    runtime: "nodejs12.x",
+    logRetentionInDays: 60,
+    stage: "local",
+    tags: {
+      owner: "jgu@xxx.com.au",
+      "account-name": "test-${env:NODE_ENV}",
+      creator: "jgu@xxx.com.au",
+      "project-name": "test deployment",
+      "program-name": "bsd",
+      "project-code": "102",
+    },
+  },
+  useDotenv: true,
+  custom: {
+    localstack: {
+      debugger: true,
+      stages: ["${env:NODE_ENV}"],
+      endpointFile: "localstack_endpoints.json",
+      lambda: {
+        mountCode: true,
+      },
+    },
+  },
+  configValidationMode: "error",
+  functions: {
+    api: {
+      handler: "src/index.hello",
+      architecture: "arm64",
+      memorySize: 512,
+      maximumRetryAttempts: 0,
+      timeout: 900,
+      environment: {
+        API_VERSION: "${env:CURRENT_API_VERSION}",
+        STAGE: "${env:NODE_ENV}",
+        NODE_OPTIONS: "--no-deprecation",
+      },
+    },
+  },
+};
+
+module.exports = serverlessConfiguration;
+```
+
+Again for deployment of the code, run
+
+```
+serverless deploy --stage local
+```
+
+Check the information
+
+```
+serverless info --stage local
+```
+
+Output
+
+```
+service: localstack-demo
+stage: local
+region: us-east-1
+stack: localstack-demo-local
+functions:
+  api: localstack-demo-local-api
+```
+
+Invoke the function with serverless.
+Note: The name of the deployed lambda function is 'localstack-demo-local-api'. But in Serverless, the alias of the function is 'api'. So when you invoke the function with serverless, the function should use `api`. But when you invoke the function with aws cli,
+
+```
+serverless invoke --stage local -f api
+```
+
+Output
+
+```
+Using serverless-localstack
+{
+    "body": "{\n  \"message\": \"Works12!\",\n  \"input\": {}\n}",
+    "statusCode": 200
+}
+```
+
+Or invoke from aws cli
+
+```sh
+ENDPOINT=http://0.0.0.0:4566
+FUNCTION_NAME=localstack-demo-local-api
+
+aws lambda invoke \
+  --cli-binary-format raw-in-base64-out \
+  --function-name ${FUNCTION_NAME} \
+  --invocation-type RequestResponse \
+  --no-sign-request \
+  --payload '{"fruit": "tomato"}'\
+  --endpoint ${ENDPOINT} \
+  output.json
+```
+
+Output
+
+```
+{
+    "StatusCode": 200,
+    "LogResult": "",
+    "ExecutedVersion": "$LATEST"
+}
+```
+
+The generated output.json
+
+```json
+{
+  "body": "{\n  \"message\": \"Works12!\",\n  \"input\": {\n    \"fruit\": \"tomato\"\n  }\n}",
+  "statusCode": 200
+}
+```

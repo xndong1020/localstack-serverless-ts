@@ -1,5 +1,5 @@
 ENDPOINT=http://0.0.0.0:4566
-FUNCTION_NAME=localstack-demo-local-hello
+FUNCTION_NAME=localstack-demo-local-api
 PAYLOAD='{ "myJsonData": "true" }'
 
 aws lambda invoke \
